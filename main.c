@@ -235,7 +235,8 @@ void *PoolBroadcastThreadProc(void *Info)
 			
 			if (!CurShare->Gothash) {
 				((uint32_t *)(CurShare->Job->XMRBlob + 39))[0] = CurShare->Nonce;
-				cryptonight_hash_ctx(HashResult, CurShare->Job->XMRBlob, CurShare->Job->XMRBlobLen, c_ctx);
+				int variant = ((uint8_t*)CurShare->Job->XMRBlob)[0] >= 7 ? ((uint8_t*)CurShare->Job->XMRBlob)[0] - 6 : 0;
+				cryptonight_hash_ctx(HashResult, CurShare->Job->XMRBlob, CurShare->Job->XMRBlobLen, c_ctx, variant);
 				BinaryToASCIIHex(ASCIIResult, HashResult, 32);
 			} else {
 				BinaryToASCIIHex(ASCIIResult, CurShare->Blob, 32);
@@ -1255,7 +1256,7 @@ void *MinerThreadProc(void *Info)
 	uint64_t Target;
 	uint32_t BlobLen;
 	MinerThreadInfo *MTInfo = (MinerThreadInfo *)Info;
-	uint32_t StartNonce = (0xFFFFFFFFU / MTInfo->TotalMinerThreads) * MTInfo->ThreadID;
+	uint32_t StartNonce = ((0xFFFFFFFFU / MTInfo->TotalMinerThreads) * MTInfo->ThreadID) & 0xFFFFFFFE;
 	uint32_t MaxNonce = StartNonce + (0xFFFFFFFFU / MTInfo->TotalMinerThreads);
 	uint32_t Nonce = StartNonce, PrevNonce, platform = 0, device = 1, CurENonce2;
 	struct cryptonight_ctx *ctx;
@@ -1350,11 +1351,12 @@ void *MinerThreadProc(void *Info)
 			uint32_t n = first_nonce - 1;
 			uint64_t hash[32/8] __attribute__((aligned(64)));
 			int found = 0;
+			int variant = ((uint8_t*)TmpWork)[0] >= 7 ? ((uint8_t*)TmpWork)[0] - 6 : 0;
 again:
 			do {
 				if (ExitFlag) break;
 				*nonceptr = ++n;
-				cryptonight_hash_ctx(hash, TmpWork, BlobLen, ctx);
+				cryptonight_hash_ctx(hash, TmpWork, BlobLen, ctx, variant);
 				if (hash[3] < Target) {
 					found = 1;
 				} else if (atomic_load(RestartMining + MTInfo->ThreadID)) {

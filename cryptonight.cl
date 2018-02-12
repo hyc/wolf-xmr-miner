@@ -14,6 +14,22 @@
 #include "blake256.cl"
 #include "groestl256.cl"
 
+#define VARIANT1_1(p, o) \
+  do if (variant > 0) \
+  { \
+    uint tmp32 = p[o].z; \
+    uint tmp = tmp32 >> 24; \
+    uint tmp1 = (tmp>>4)&1, tmp2 = (tmp>>5)&1, tmp3 = tmp1^tmp2; \
+    uint tmp0 = nonce_flag ? tmp3 : tmp1 + 1; \
+    tmp32 &= 0x00ffffff; tmp32 |= ((tmp & 0xef) | (tmp0<<4)) << 24; \
+    p[o].z = tmp32; \
+  } while(0)
+
+#define VARIANT1_2(p, o) VARIANT1_1(p, o)
+
+#define VARIANT1_INIT() \
+  int variant = 1; /* TODO, how to pass parameters to opencl ? */ \
+  const unsigned char nonce_flag = (get_global_id(0) - get_global_offset(0)) & 1
 
 
 STATIC const __constant ulong keccakf_rndc[24] = 
@@ -422,6 +438,8 @@ __kernel void cn1(__global uint4 *Scratchpad, __global ulong *states)
 	Scratchpad += ((get_global_id(0) - get_global_offset(0)));
 	states += (25 * (get_global_id(0) - get_global_offset(0)));
 	
+	VARIANT1_INIT();
+
 	for(int i = get_local_id(0); i < 256; i += WORKSIZE)
 	{
 		const uint tmp = AES0_C[i];
@@ -450,6 +468,7 @@ __kernel void cn1(__global uint4 *Scratchpad, __global ulong *states)
 		//b_x ^= ((uint4 *)c)[0];
 		
 		Scratchpad[IDX((a[0] & 0x1FFFF0) >> 4)] = b_x ^ ((uint4 *)c)[0];
+		VARIANT1_1(Scratchpad, IDX((a[0] & 0x1FFFF0) >> 4));
 		
 		uint4 tmp;
 		tmp = Scratchpad[IDX((c[0] & 0x1FFFF0) >> 4)];
@@ -458,6 +477,7 @@ __kernel void cn1(__global uint4 *Scratchpad, __global ulong *states)
 		a[0] += mul_hi(c[0], as_ulong2(tmp).s0);
 		
 		Scratchpad[IDX((c[0] & 0x1FFFF0) >> 4)] = ((uint4 *)a)[0];
+		VARIANT1_2(Scratchpad, IDX((c[0] & 0x1FFFF0) >> 4));
 		
 		((uint4 *)a)[0] ^= tmp;
 		

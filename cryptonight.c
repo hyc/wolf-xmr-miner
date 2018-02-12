@@ -4,6 +4,7 @@
 
 // Modified for CPUminer by Lucas Jones
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #ifdef __linux__
@@ -44,6 +45,25 @@ typedef __uint128_t uint128_t;
 #define AES_KEY_SIZE    32 /*16*/
 #define INIT_SIZE_BLK   8
 #define INIT_SIZE_BYTE (INIT_SIZE_BLK * AES_BLOCK_SIZE)
+
+#define VARIANT1_1(p, o) \
+  do if (variant > 0) \
+  { \
+    uint8_t tmp = ((const uint8_t*)(&p[o]))[11]; \
+    uint8_t tmp1 = (tmp>>4)&1, tmp2 = (tmp>>5)&1, tmp3 = tmp1^tmp2; \
+    uint8_t tmp0 = nonce_flag ? tmp3 : tmp1 + 1; \
+    ((uint8_t*)(&p[o]))[11] = (tmp & 0xef) | (tmp0<<4); \
+  } while(0)
+
+#define VARIANT1_2(p, o) VARIANT1_1(p, o)
+
+#define VARIANT1_INIT() \
+  if (variant > 0 && inlen < 43) \
+  { \
+    fprintf(stderr, "Cryptonight variants need at least 43 bytes of data"); \
+    _exit(1); \
+  } \
+  const uint8_t nonce_flag = variant > 0 ? ((const uint8_t*)input)[39] & 0x01 : 0
 
 #pragma pack(push, 1)
 union cn_slow_hash_state {
@@ -144,13 +164,15 @@ struct cryptonight_aesni_ctx {
 };
 
 #ifdef __x86_64__
-void cryptonight_hash_dumb(void* output, const void* input, const uint32_t inlen, struct cryptonight_ctx* ctx) {
+void cryptonight_hash_dumb(void* output, const void* input, const uint32_t inlen, struct cryptonight_ctx* ctx, int variant) {
 	size_t i, j;
 	keccak1600(input, inlen, (uint8_t *)&ctx->state.hs);
 	if (!ctx->aes_ctx)
 		ctx->aes_ctx = (oaes_ctx*) oaes_alloc();
 	memcpy(ctx->text, ctx->state.init, INIT_SIZE_BYTE);
 	
+	VARIANT1_INIT();
+
 	oaes_key_import_data(ctx->aes_ctx, ctx->state.hs.b, AES_KEY_SIZE);
 	for (i = 0; (i < MEMORY); i += INIT_SIZE_BYTE) {
 		aesb_pseudo_round_mut(&ctx->text[AES_BLOCK_SIZE * 0], ctx->aes_ctx->key->exp_data);
@@ -176,14 +198,18 @@ void cryptonight_hash_dumb(void* output, const void* input, const uint32_t inlen
 		j = e2i(ctx->a);
 		aesb_single_round(&ctx->long_state[j], ctx->c, ctx->a);
 		xor_blocks_dst(ctx->c, ctx->b, &ctx->long_state[j]);
+		VARIANT1_1(ctx->long_state, j);
 		/* Iteration 2 */
 		mul_sum_xor_dst(ctx->c, ctx->a, &ctx->long_state[e2i(ctx->c)]);
+		VARIANT1_2(ctx->long_state, e2i(ctx->c));
 		/* Iteration 3 */
 		j = e2i(ctx->a);
 		aesb_single_round(&ctx->long_state[j], ctx->b, ctx->a);
 		xor_blocks_dst(ctx->b, ctx->c, &ctx->long_state[j]);
+		VARIANT1_1(ctx->long_state, j);
 		/* Iteration 4 */
 		mul_sum_xor_dst(ctx->b, ctx->a, &ctx->long_state[e2i(ctx->b)]);
+		VARIANT1_2(ctx->long_state, e2i(ctx->b));
 	}
 
 	memcpy(ctx->text, ctx->state.init, INIT_SIZE_BYTE);
@@ -299,11 +325,13 @@ static inline void ExpandAESKey256(char *keybuf)
 	keys[14] = tmp1;
 }
 
-void cryptonight_hash_aesni(void *restrict output, const void *restrict input, const uint32_t inlen, struct cryptonight_ctx *restrict ct0)
+void cryptonight_hash_aesni(void *restrict output, const void *restrict input, const uint32_t inlen, struct cryptonight_ctx *restrict ct0, int variant)
 {
     struct cryptonight_aesni_ctx *ctx = (struct cryptonight_aesni_ctx *)ct0;
     uint8_t ExpandedKey[256];
     size_t i, j;
+
+    VARIANT1_INIT();
 
     keccak1600(input, inlen, (uint8_t *)&ctx->state.hs);
     memcpy(ctx->text, ctx->state.init, INIT_SIZE_BYTE);
@@ -364,6 +392,7 @@ void cryptonight_hash_aesni(void *restrict output, const void *restrict input, c
 
 	b_x = _mm_xor_si128(b_x, c_x);
 	_mm_store_si128((__m128i *)&ctx->long_state[a[0] & 0x1FFFF0], b_x);
+	VARIANT1_1(ctx->long_state, a[0] & 0x1FFFF0);
 
 	uint64_t *nextblock = (uint64_t *)&ctx->long_state[c[0] & 0x1FFFF0];
 	uint64_t b[2];
@@ -391,6 +420,7 @@ void cryptonight_hash_aesni(void *restrict output, const void *restrict input, c
 	a[0] ^= b[0];
 	a[1] ^= b[1];
 	b_x = c_x;
+	VARIANT1_2(ctx->long_state, c[0] & 0x1FFFF0);
 	__builtin_prefetch(&ctx->long_state[a[0] & 0x1FFFF0], 0, 3);
 	}
 
@@ -465,6 +495,7 @@ struct cryptonight_aesv8_ctx {
   vst1q_u8((uint8_t *)ctx->c, _c); \
   _b = veorq_u8(_b, _c); \
   vst1q_u8(&ctx->long_state[j], _b); \
+  VARIANT1_1(ctx->long_state, j); \
   j = state_index(ctx->c); \
   p = U64(&ctx->long_state[j]); \
   ctx->b[0] = p[0]; ctx->b[1] = p[1]; \
@@ -475,6 +506,7 @@ struct cryptonight_aesv8_ctx {
   p[0] = ctx->a[0];  p[1] = ctx->a[1]; \
   ctx->a[0] ^= ctx->b[0]; ctx->a[1] ^= ctx->b[1]; \
   _b = _c; \
+  VARIANT1_2(ctx->long_state, j); \
 
 
 /* Note: this was based on a standard 256bit key schedule but
@@ -605,7 +637,7 @@ static inline void aes_pseudo_round_xor(const uint8_t *in, uint8_t *out, const u
 	}
 }
 
-void cryptonight_hash_aesni(void *restrict output, const void *restrict input, const uint32_t inlen, struct cryptonight_ctx *restrict ct0)
+void cryptonight_hash_aesni(void *restrict output, const void *restrict input, const uint32_t inlen, struct cryptonight_ctx *restrict ct0, int variant)
 {
     struct cryptonight_aesv8_ctx *ctx = (struct cryptonight_aesv8_ctx *)ct0;
     uint8_t expandedKey[240];
@@ -613,6 +645,8 @@ void cryptonight_hash_aesni(void *restrict output, const void *restrict input, c
     const uint8x16_t zero = {0};
     size_t i, j;
     uint64_t *p = NULL;
+
+    VARIANT1_INIT();
 
     /* CryptoNight Step 1:  Use Keccak1600 to initialize the 'state' (and 'text') buffers from the data. */
 
