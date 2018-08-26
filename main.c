@@ -632,7 +632,7 @@ int32_t SetupXMRTest(AlgoContext *HashData, OCLPlatform *OCL, uint32_t DeviceIdx
 	
 	Options = (char *)malloc(sizeof(char) * 32);
 	
-	snprintf(Options, 31, "-I. -DWORKSIZE=%d", LocalThreads);
+	snprintf(Options, 31, "-I. -DWORKSIZE=%zd", LocalThreads);
 	
 	retval = clBuildProgram(HashData->Program, 1, &OCL->Devices[DeviceIdx].DeviceID, Options, NULL, NULL);
 	
@@ -1280,7 +1280,7 @@ void *MinerThreadProc(void *Info)
 		MTInfo->AlgoCtx.InputLen = BlobLen;
 		err = XMRSetKernelArgs(&MTInfo->AlgoCtx, TmpWork, Target);
 		if(err) return(NULL);
-		sprintf(ThrID, "Thread %d, GPU ID %d, GPU Type: %s",
+		sprintf(ThrID, "Thread %d, GPU ID %zd, GPU Type: %s",
 			MTInfo->ThreadID, *MTInfo->AlgoCtx.GPUIdxs, MTInfo->PlatformContext->Devices[*MTInfo->AlgoCtx.GPUIdxs].DeviceName);
 	} else {
 		ctx = cryptonight_ctx();
