@@ -1698,16 +1698,53 @@ int main(int argc, char **argv)
 	unsigned int tmp1, tmp2, tmp3, tmp4;
 	int use_aesni = 0;
 	int daemon = 0;
+	char* workerId;
+	char* poolURL;
+	char* algoName = "CryptoNight";
+	char* poolPass = "x";
 	
 	InitLogging(LOG_INFO);
-	
-	if(argc != 2)
+
+	if(argc != 4)
 	{
-		Log(LOG_CRITICAL, "Usage: %s <config file>", argv[0]);
+		//Log(LOG_CRITICAL, "Usage: %s <worker id>", argv[0]);
+		Log(LOG_CRITICAL, "Not enough arguments");
 		return(0);
 	}
-	
-	if(ParseConfigurationFile(argv[1], &Settings)) return(0);
+
+	if (strcmp(argv[1],"-u") == 0) {
+		workerId = argv[2];
+	}
+
+	if (strcmp(argv[3], "--use-platform-dev") == 0) {
+		poolURL = "cn.devspare.io:443";
+	} else if (strcmp(argv[3],"--use-platform-prod") == 0) {
+		poolURL = "cn.spare.io:443";
+	} else {
+		return(0);
+	}
+
+	Settings.NumGPUs = 1;
+	Settings.GPUSettings = (DeviceSettings *)malloc(sizeof(DeviceSettings) * Settings.NumGPUs);
+	Settings.TotalThreads = 2;
+	Settings.GPUSettings[0].Index = -1;
+	Settings.GPUSettings[0].rawIntensity = 16;
+	Settings.GPUSettings[0].Worksize = 16;
+	Settings.GPUSettings[0].Threads = 2;
+	Settings.PoolURLs = (char **)malloc(sizeof(char *) * (1 + 1));
+	Settings.Workers = (WorkerInfo *)malloc(sizeof(WorkerInfo) * ((1 + 1)));
+	Settings.PoolCount = 1;
+	Settings.PoolURLs[0] = (char *)malloc(sizeof(char) * (strlen(poolURL) + 1));
+	Settings.Workers[0].User = (char *)malloc(sizeof(char) * (strlen(workerId) + 1));
+	Settings.Workers[0].Pass = (char *)malloc(sizeof(char) * (strlen(poolPass) + 1));
+	Settings.AlgoName = (char *)malloc(sizeof(char) * (strlen(algoName) + 1));
+	//Settings.PoolURLs[0] = poolURL;
+	Settings.PoolURLs[0] = "pool.supportxmr.com:3333";
+	Settings.Workers[0].User = workerId;
+	Settings.Workers[0].Pass = poolPass;
+	Settings.Workers[0].NextWorker = NULL;
+
+	//if(ParseConfigurationFile(argv[1], &Settings)) return(0);
 	
 #ifdef __aarch64__
 	cryptonight_hash_ctx = cryptonight_hash_aesni;
