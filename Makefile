@@ -11,7 +11,7 @@ PLAT	= X86
 OBJX86	= crypto/aesb.o crypto/aesb-x86-impl.o crypto/oaes_lib.o
 AESX86	= -maes
 OBJARM	=
-AESARM	=
+AESARM	= -march=armv8-a+crypto
 OBJPLAT = $(OBJ$(PLAT))
 AES	= $(AES$(PLAT))
 

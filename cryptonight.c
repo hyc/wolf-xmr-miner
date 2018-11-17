@@ -506,7 +506,7 @@ struct cryptonight_aesv8_ctx {
   ctx->a[0] += hi; ctx->a[1] += lo; }\
   p = U64(&ctx->long_state[j]); \
   p[0] = ctx->a[0];  p[1] = ctx->a[1]; \
-  VARIANT1_2(p[1]);
+  VARIANT1_2(p[1]); \
   ctx->a[0] ^= ctx->b[0]; ctx->a[1] ^= ctx->b[1]; \
   _b = _c; \
 
